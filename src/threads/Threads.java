@@ -6,31 +6,30 @@ package threads;
 
 import java.util.Random;
 import java.util.stream.DoubleStream;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.Vector;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  *
  * @author errol
  */
-
 public class Threads implements Runnable {
 
     private final double min;
     private final double max;
     private final String threadName;
     private final int sleepTime; // Sleep time for the thread
-    private final BlockingQueue<Double> queue; // Shared queue
+    private final Queue<Double> queue; // Shared queue
 
-    public Threads(double min, double max, String threadName, int sleepTime, BlockingQueue<Double> queue) {
+    public Threads(double min, double max, String threadName, int sleepTime, Queue<Double> queue) {
         this.min = min;
         this.max = max;
         this.threadName = threadName;
@@ -41,25 +40,25 @@ public class Threads implements Runnable {
     @Override
     public void run() {
         Random random = new Random();
-        DoubleStream.generate(() -> min + (max - min) * random.nextDouble())
-                .limit(5)
-                .forEach(randomNumber -> {
-                    try {
-                        System.out.printf("%s generated: %.2f%n", threadName, randomNumber);
-                        Thread.sleep(sleepTime); // Each thread sleeps for a different amount of time
-                        queue.put(randomNumber);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        System.out.println("Thread interrupted: " + e.getMessage());
-                    }
-                });
+        while (!Thread.currentThread().isInterrupted()) {
+            try {
+                double randomNumber = min + (max - min) * random.nextDouble();
+                System.out.printf("%s generated: %.2f%n", threadName, randomNumber);
+                Thread.sleep(sleepTime); // Each thread sleeps for a different amount of time
+                queue.add(Double.parseDouble(String.format("%.2f", randomNumber))); // Add the random number to the queue
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                System.out.println("Thread interrupted: " + e.getMessage());
+                break;
+            }
+        }
     }
 
-     public static void main(String[] args) {
-        // Create 5 BlockingQueues for the producers
-        List<BlockingQueue<Double>> queues = new ArrayList<>();
+    public static void main(String[] args) {
+        // Create 5 ConcurrentLinkedQueues for the producers
+        List<Queue<Double>> queues = new ArrayList<>();
         for (int i = 0; i < 5; i++) {
-            queues.add(new LinkedBlockingQueue<>());
+            queues.add(new ConcurrentLinkedQueue<>());
         }
 
         // Create vectors to store the queue lengths after sorting
@@ -92,7 +91,7 @@ public class Threads implements Runnable {
             // Report final queue sizes and sorting extent
             System.out.println("\nFinal Report:");
             for (int i = 0; i < queues.size(); i++) {
-                BlockingQueue<Double> queue = queues.get(i);
+                Queue<Double> queue = queues.get(i);
                 List<Double> tempList = new ArrayList<>(queue);  // Copy current queue into a list
                 System.out.printf("Queue %d size: %d%n", i + 1, tempList.size());
 
@@ -116,7 +115,9 @@ public class Threads implements Runnable {
 
     // Helper function to check how many elements are sorted
     private static int checkSorted(List<Double> list) {
-        if (list.size() <= 1) return list.size();
+        if (list.size() <= 1) {
+            return list.size();
+        }
         int sortedCount = 1; // First element is always considered sorted
         for (int i = 1; i < list.size(); i++) {
             if (list.get(i) >= list.get(i - 1)) {
@@ -131,11 +132,11 @@ public class Threads implements Runnable {
 
 class QueueSorter implements Runnable {
 
-    private final List<BlockingQueue<Double>> queues;
+    private final List<Queue<Double>> queues;
     private final List<Vector<Integer>> vectors;
     private final Random random = new Random();
 
-    public QueueSorter(List<BlockingQueue<Double>> queues, List<Vector<Integer>> vectors) {
+    public QueueSorter(List<Queue<Double>> queues, List<Vector<Integer>> vectors) {
         this.queues = queues;
         this.vectors = vectors;
     }
@@ -149,18 +150,18 @@ class QueueSorter implements Runnable {
 
                 // Sort each queue and record its length
                 for (int i = 0; i < queues.size(); i++) {
-                    BlockingQueue<Double> queue = queues.get(i);
+                    Queue<Double> queue = queues.get(i);
 
                     // Remove all elements from the queue into a list
-                    List<Double> tempList = new ArrayList<>();
-                    queue.drainTo(tempList);
+                    List<Double> tempList = new ArrayList<>(queue);
+                    queue.clear(); // Clear the queue after copying the elements
 
                     // Sort the list
                     Collections.sort(tempList);
 
                     // Reinsert the sorted elements back into the queue
                     for (Double num : tempList) {
-                        queue.put(num);
+                        queue.add(num);
                     }
 
                     // Record the length of the queue in the corresponding vector
